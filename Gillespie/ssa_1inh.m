@@ -1,0 +1,89 @@
+function ssa_1inh()
+% Simulate a two-state model of gene expression
+import Gillespie.*
+
+global a1 a2 b1 b2 d1 d2 k1 k2 k3 k4 eta;
+reset_params() % set physical parameters to the values from Alexis et al. 2023
+%% Reaction network:
+% 1.  0       ---b1--->     Y1
+% 2.  0       ---b2--->     Y2
+% 3.  Y1      ---d1--->     0
+% 4.  Y2      ---d2--->     0
+% 5.  Y1      ---a2--->     Y1 + Y2
+% 6.  Y2      ---a1--->     Y2 + Y1
+% 7.  Y1      ---k1--->     Y1 + Z1
+% 8.  Y2      ---k2--->     Y2 + Z2
+% 9.  Y2 + Z2 ---k3--->     Z2
+% 10. Z1 + Z2 ---eta-->    0  
+
+%% Rate constants
+p.a1 = a1;
+p.a2 = a2;
+p.b1 = b1;
+p.b2 = b2;
+p.d1 = d1;
+p.d2 = d2;
+p.k1 = k1;
+p.k2 = k2;
+p.k3 = k3;
+p.eta = eta;
+
+%% Initial state
+tspan = [0, 10000]; %seconds
+x0    = [0, 0, 0, 0];     %Y1, Y2, Z1, Z2
+
+%% Specify reaction network
+pfun = @propensities_2state;
+%                 Y1    Y2    Z1    Z2
+stoich_matrix = [ 1     0     0     0;   % 0       ---b1--->     Y1
+                  0     1     0     0;   % 0       ---b2--->     Y2
+                 -1     0     0     0;   % Y1      ---d1--->     0
+                  0     -1    0     0;   % Y2      ---d2--->     0
+                  0     1     0     0;   % Y1      ---a2--->     Y1 + Y2
+                  1     0     0     0;   % Y2      ---a1--->     Y2 + Y1
+                  0     0     1     0;   % Y1      ---k1--->     Y1 + Z1
+                  0     0     0     1;   % Y2      ---k2--->     Y2 + Z2
+                  0     -1    0     0;   % Y2 + Z2 ---k3--->     Z2
+                  0     0     -1   -1;]; % Z1 + Z2 ---eta-->     0  
+
+%% Run simulation
+[t,x] = directMethod(stoich_matrix, pfun, tspan, x0, p);
+%[t,x] = firstReactionMethod(stoich_matrix, pfun, tspan, x0, p);
+
+%% Plot time course
+figure;
+tiles = tiledlayout(2, 1);
+nexttile; stairs(t,x); set(gca,'XLim',tspan);
+legend('Y_1','Y_2', 'Z_1', 'Z_2');
+
+ratio = x(:,2)./x(:,1);
+nexttile; stairs(t,x(:,1)./x(:,2)); set(gca,'XLim',tspan);
+yline(k2/k1, '--r', LineWidth=2); % plot the expected equilibrium
+yline(mean(ratio(~isinf(ratio) & ~isnan(ratio))), '--g', LineWidth=2) % plot the mean molecular count (likely inaccurate because NaN and Inf values omitted)
+legend('Y_1/Y_2', 'Expected value (k_2/k_1)', 'Mean value of Y_1/Y_2')
+
+title(tiles, "Gillespie simulation of R-regulator with 1 inhibitory feedback connection")
+xlabel(tiles, 'time (s)');
+ylabel(tiles, '# of molecules');
+
+end
+
+
+function a = propensities_2state(x, p)
+% Return reaction propensities given current state x
+Y1 = x(1);
+Y2 = x(2);
+Z1 = x(3);
+Z2 = x(4);
+
+a = [ p.b1;           % 0       ---b1--->     Y1
+      p.b2;           % 0       ---b2--->     Y2
+      p.d1*Y1;        % Y1      ---d1--->     0
+      p.d2*Y2;        % Y2      ---d2--->     0
+      p.a2*Y1;        % Y1      ---a2--->     Y1 + Y2
+      p.a1*Y2;        % Y2      ---a1--->     Y2 + Y1
+      p.k1*Y1;        % Y1      ---k1--->     Y1 + Z1
+      p.k2*Y2;        % Y2      ---k2--->     Y2 + Z2
+      p.k3*Y2*Z2;     % Y2 + Z2 ---k3--->     Z2
+      p.eta*Z1*Z2;];  % Z1 + Z2 ---eta-->     0
+end
